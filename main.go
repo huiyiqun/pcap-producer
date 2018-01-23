@@ -1,32 +1,30 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"log"
 	"time"
 
 	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
-	"github.com/google/gopacket/pfring"
+	"github.com/google/gopacket/pcap"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
-func printStats(r *pfring.Ring) {
+func printStats(h *pcap.Handle) {
 	for range time.Tick(1 * time.Second) {
-		stats, err := r.Stats()
+		stats, err := h.Stats()
 		if err != nil {
-			log.Fatalln("pfring ring stats error:", err)
+			log.Fatalln("pcap handle stats error:", err)
 		}
 		log.Printf(
-			"recv/drop: %d/%d | drop%%: %f%%",
-			stats.Received, stats.Dropped,
-			float64(stats.Dropped)/float64(stats.Received))
+			"recv/drop/ifdrop: %d/%d/%d",
+			stats.PacketsReceived, stats.PacketsDropped,
+			stats.PacketsIfDropped)
 	}
 }
 
-func handleKafkaEvents(producer *kafka.Producer) {
+func handleKafkaEvents(p *kafka.Producer) {
 	for ev := range p.Events() {
 		log.Println("kafka event:", ev)
 	}
@@ -37,39 +35,31 @@ func main() {
 
 	iface := flag.String("i", "bond0", "Interface to read packets from")
 	snaplen := flag.Int("s", 65536, "Sanp length (number of bytes max to read per packet")
+	topic := flag.String("t", "pcap", "Kafka topic to write to")
+	server := flag.String("k", "localhost:9092", "Kafka server to write to")
 	flag.Parse()
 
-	ring, err := pfring.NewRing(*iface, uint32(*snaplen), pfring.FlagPromisc)
+	handle, err := pcap.OpenLive(*iface, int32(*snaplen), true, pcap.BlockForever)
 	if err != nil {
-		log.Fatalln("pfring ring creation error:", err)
+		log.Fatalln("pcap handle opening error:", err)
 	}
 
-	err = ring.SetSocketMode(pfring.ReadOnly)
-	if err != nil {
-		log.Fatalln("pfring SetSocketMode error:", err)
-	}
-
-	err = ring.Enable()
-	if err != nil {
-		log.Fatalln("pfring Enable error:", err)
-	}
-
-	go printStats(ring)
+	go printStats(handle)
 
 	producer, err := kafka.NewProducer(
-		&kafka.ConfigMap{"bootstrap.servers": "localhost:9092"})
+		&kafka.ConfigMap{"bootstrap.servers": *server})
 	if err != nil {
 		log.Fatalln("producer creation error:", err)
 	}
 
-	source := gopacket.NewPacketSource(ring, layers.LayerTypeEthernet)
+	source := gopacket.NewPacketSource(handle, handle.LinkType())
 	for packet := range source.Packets() {
 		producer.ProduceChannel() <- &kafka.Message{
 			TopicPartition: kafka.TopicPartition{
-				Topic:     &topic,
+				Topic:     topic,
 				Partition: kafka.PartitionAny,
 			},
-			Value: packet.Source(),
+			Value: packet.Data(),
 		}
 	}
 }

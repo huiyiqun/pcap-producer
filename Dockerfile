@@ -1,21 +1,15 @@
-FROM ubuntu:16.04
-
-# Enable repo of ntop
-RUN apt-get update && apt-get upgrade -y && apt-get install -y wget lsb-release
-RUN wget http://apt-stable.ntop.org/16.04/all/apt-ntop-stable.deb && dpkg -i apt-ntop-stable.deb && rm apt-ntop-stable.deb
-
-# Install latest go
-RUN wget https://dl.google.com/go/go1.9.2.linux-amd64.tar.gz -O- | tar xvz -C /opt
+FROM ubuntu:18.04
 
 # Install dependencies
-RUN apt-get update && apt-get install -y pfring git
+RUN apt-get update && apt-get install -y git golang librdkafka-dev pkg-config libpcap-dev
+
 ENV GOPATH=/go
-RUN /opt/go/bin/go get github.com/google/gopacket/examples/pfdump
-RUN /opt/go/bin/go get github.com/segmentio/kafka-go
+RUN go get github.com/google/gopacket
+RUN go get github.com/confluentinc/confluent-kafka-go/kafka
 
 RUN mkdir /opt/pcap-producer
 WORKDIR /opt/pcap-producer
 ADD main.go .
-RUN /opt/go/bin/go build main.go
+RUN go build main.go
 
 ENTRYPOINT ["./main"]
