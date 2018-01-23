@@ -10,10 +10,10 @@ import (
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pfring"
 
-	kafka "github.com/segmentio/kafka-go"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
-func print_stats(r *pfring.Ring) {
+func printStats(r *pfring.Ring) {
 	for range time.Tick(1 * time.Second) {
 		stats, err := r.Stats()
 		if err != nil {
@@ -23,6 +23,12 @@ func print_stats(r *pfring.Ring) {
 			"recv/drop: %d/%d | drop%%: %f%%",
 			stats.Received, stats.Dropped,
 			float64(stats.Dropped)/float64(stats.Received))
+	}
+}
+
+func handleKafkaEvents(producer *kafka.Producer) {
+	for ev := range p.Events() {
+		log.Println("kafka event:", ev)
 	}
 }
 
@@ -48,23 +54,22 @@ func main() {
 		log.Fatalln("pfring Enable error:", err)
 	}
 
-	go print_stats(ring)
+	go printStats(ring)
 
-	writer := kafka.NewWriter(kafka.WriterConfig{
-		Brokers:  []string{"localhost:9092"},
-		Topic:    "pcap",
-		Balancer: &kafka.Hash{},
-	})
-	defer writer.Close()
+	producer, err := kafka.NewProducer(
+		&kafka.ConfigMap{"bootstrap.servers": "localhost:9092"})
+	if err != nil {
+		log.Fatalln("producer creation error:", err)
+	}
 
 	source := gopacket.NewPacketSource(ring, layers.LayerTypeEthernet)
 	for packet := range source.Packets() {
-		writer.WriteMessages(
-			context.Background(),
-			kafka.Message{
-				Key:   []byte("key"),
-				Value: packet.Data(),
+		producer.ProduceChannel() <- &kafka.Message{
+			TopicPartition: kafka.TopicPartition{
+				Topic:     &topic,
+				Partition: kafka.PartitionAny,
 			},
-		)
+			Value: packet.Source(),
+		}
 	}
 }
