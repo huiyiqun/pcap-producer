@@ -19,7 +19,10 @@ func print_stats(r *pfring.Ring) {
 		if err != nil {
 			log.Fatalln("pfring ring stats error:", err)
 		}
-		log.Printf("recv/drop: %d/%d | drop%%: %f%%", stats.Received, stats.Dropped, float64(stats.Dropped)/float64(stats.Received))
+		log.Printf(
+			"recv/drop: %d/%d | drop%%: %f%%",
+			stats.Received, stats.Dropped,
+			float64(stats.Dropped)/float64(stats.Received))
 	}
 }
 
