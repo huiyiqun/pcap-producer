@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"flag"
+	"log"
+	"time"
+
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pfring"
+
 	kafka "github.com/segmentio/kafka-go"
-	"log"
-	"time"
 )
 
 func print_stats(r *pfring.Ring) {
@@ -44,8 +46,22 @@ func main() {
 	}
 
 	go print_stats(ring)
+
+	writer := kafka.NewWriter(kafka.WriterConfig{
+		Brokers:  []string{"localhost:9092"},
+		Topic:    "pcap",
+		Balancer: &kafka.Hash{},
+	})
+	defer writer.Close()
+
 	source := gopacket.NewPacketSource(ring, layers.LayerTypeEthernet)
 	for packet := range source.Packets() {
-		log.Printf("Packet %d: %v", count, packet.Data())
+		writer.WriteMessages(
+			context.Background(),
+			kafka.Message{
+				Key:   []byte("key"),
+				Value: packet.Data(),
+			},
+		)
 	}
 }
