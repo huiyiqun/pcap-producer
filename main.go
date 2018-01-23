@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pfring"
 	"log"
 )
@@ -26,5 +28,10 @@ func main() {
 	err = ring.Enable()
 	if err != nil {
 		log.Fatalln("pfring Enable error:", err)
+	}
+
+	source := gopacket.NewPacketSource(ring, layers.LayerTypeEthernet)
+	for packet := range source.Packets() {
+		log.Printf("Packet %d: %v", count, packet.Data())
 	}
 }
